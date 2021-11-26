@@ -39,7 +39,8 @@ class FlowNet2(nn.Module):
         self.channelnorm = ChannelNorm()
 
         # First Block (FlowNetC)
-        self.flownetc = FlowNetC.FlowNetC(args, batchNorm=self.batchNorm)
+        #self.flownetc = FlowNetC.FlowNetC(args, batchNorm=self.batchNorm)
+        self.flownetc = nn.Conv2d(in_channels=6, out_channels=2, kernel_size=(4, 4), stride=(4, 4))
         self.upsample1 = nn.Upsample(scale_factor=4, mode='bilinear')
 
         if args.fp16:
@@ -51,7 +52,8 @@ class FlowNet2(nn.Module):
             self.resample1 = Resample2d()
 
         # Block (FlowNetS1)
-        self.flownets_1 = FlowNetS.FlowNetS(args, batchNorm=self.batchNorm)
+        # self.flownets_1 = FlowNetS.FlowNetS(args, batchNorm=self.batchNorm)
+        self.flownets_1 = nn.Conv2d(in_channels=12, out_channels=2, kernel_size=(4, 4), stride=(4, 4))
         self.upsample2 = nn.Upsample(scale_factor=4, mode='bilinear')
         if args.fp16:
             self.resample2 = nn.Sequential(
@@ -63,10 +65,12 @@ class FlowNet2(nn.Module):
 
 
         # Block (FlowNetS2)
-        self.flownets_2 = FlowNetS.FlowNetS(args, batchNorm=self.batchNorm)
+        # self.flownets_2 = FlowNetS.FlowNetS(args, batchNorm=self.batchNorm)
+        self.flownets_2 = nn.Conv2d(in_channels=12, out_channels=2, kernel_size=(4, 4), stride=(4, 4))
 
         # Block (FlowNetSD)
-        self.flownets_d = FlowNetSD.FlowNetSD(args, batchNorm=self.batchNorm) 
+        # self.flownets_d = FlowNetSD.FlowNetSD(args, batchNorm=self.batchNorm)
+        self.flownets_d = nn.Conv2d(in_channels=6, out_channels=2, kernel_size=(4, 4), stride=(4, 4))
         self.upsample3 = nn.Upsample(scale_factor=4, mode='nearest') 
         self.upsample4 = nn.Upsample(scale_factor=4, mode='nearest') 
 
@@ -120,13 +124,14 @@ class FlowNet2(nn.Module):
     def forward(self, inputs):
         rgb_mean = inputs.contiguous().view(inputs.size()[:2]+(-1,)).mean(dim=-1).view(inputs.size()[:2] + (1,1,1,))
         
-        x = (inputs - rgb_mean) / self.rgb_max
-        x1 = x[:,:,0,:,:]
-        x2 = x[:,:,1,:,:]
+        temp = (inputs - rgb_mean) / self.rgb_max
+        x1 = temp[:,:,0,:,:]
+        x2 = temp[:,:,1,:,:]
         x = torch.cat((x1,x2), dim = 1)
 
         # flownetc
-        flownetc_flow2 = self.flownetc(x)[0]
+        # flownetc_flow2 = self.flownetc(x)[0]
+        flownetc_flow2 = self.flownetc(x)
         flownetc_flow = self.upsample1(flownetc_flow2*self.div_flow)
         
         # warp img1 to img0; magnitude of diff between img0 and and warped_img1, 
@@ -138,7 +143,8 @@ class FlowNet2(nn.Module):
         concat1 = torch.cat((x, resampled_img1, flownetc_flow/self.div_flow, norm_diff_img0), dim=1)
         
         # flownets1
-        flownets1_flow2 = self.flownets_1(concat1)[0]
+        # flownets1_flow2 = self.flownets_1(concat1)[0]
+        flownets1_flow2 = self.flownets_1(concat1)
         flownets1_flow = self.upsample2(flownets1_flow2*self.div_flow) 
 
         # warp img1 to img0 using flownets1; magnitude of diff between img0 and and warped_img1
@@ -150,7 +156,8 @@ class FlowNet2(nn.Module):
         concat2 = torch.cat((x, resampled_img1, flownets1_flow/self.div_flow, norm_diff_img0), dim=1)
 
         # flownets2
-        flownets2_flow2 = self.flownets_2(concat2)[0]
+        # flownets2_flow2 = self.flownets_2(concat2)[0]
+        flownets2_flow2 = self.flownets_2(concat2)
         flownets2_flow = self.upsample4(flownets2_flow2 * self.div_flow)
         norm_flownets2_flow = self.channelnorm(flownets2_flow)
 
@@ -163,7 +170,8 @@ class FlowNet2(nn.Module):
         #     diff_flownets2_img1.register_hook(save_grad(self.args.grads, 'diff_flownets2_img1'))
 
         # flownetsd
-        flownetsd_flow2 = self.flownets_d(x)[0]
+        # flownetsd_flow2 = self.flownets_d(x)[0]
+        flownetsd_flow2 = self.flownets_d(x)
         flownetsd_flow = self.upsample3(flownetsd_flow2 / self.div_flow)
         norm_flownetsd_flow = self.channelnorm(flownetsd_flow)
         
